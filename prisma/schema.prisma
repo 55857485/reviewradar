@@ -1,0 +1,36 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum SubscriptionStatus {
+  INACTIVE
+  ACTIVE
+  CANCELED
+  PAST_DUE
+}
+
+model User {
+  id                 String             @id
+  email              String             @unique
+  name               String?
+  subscriptionStatus SubscriptionStatus @default(INACTIVE)
+  reports            Report[]
+  createdAt          DateTime           @default(now())
+}
+
+model Report {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  inputText    String   @db.Text
+  outputReport String   @db.Text
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
