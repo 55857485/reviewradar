@@ -18,4 +18,5 @@ Thumbs.db
 next-env.d.ts
 tsconfig.tsbuildinfo
 .vercel
+.netlify
 .gigatool/

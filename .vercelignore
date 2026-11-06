@@ -1,0 +1,7 @@
+.env
+.env.local
+.env*.local
+dev.log
+dev.err
+dev.pid
+.gigatool

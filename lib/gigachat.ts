@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from 'node:fs';
+import https from 'node:https';
+import path from 'node:path';
 import OpenAI from 'openai';
 
 const OAUTH_URL = 'https://ngw.devices.sberbank.ru:9443/api/v2/oauth';
@@ -9,6 +12,21 @@ type CachedToken = {
 };
 
 let cachedToken: CachedToken | null = null;
+
+function readCa(): string | undefined {
+  const candidates = [
+    process.env.GIGACHAT_CA_PATH,
+    path.join(process.cwd(), 'certs', 'russian_trusted_root_ca_pem.crt'),
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate && existsSync(candidate)) {
+      return readFileSync(candidate, 'utf8');
+    }
+  }
+
+  return undefined;
+}
 
 function getAuthKey(): string {
   const authKey = process.env.GIGACHAT_AUTH_KEY;
@@ -27,29 +45,56 @@ function getAuthKey(): string {
   throw new Error('GIGACHAT_AUTH_KEY is not configured');
 }
 
+function postForm(
+  url: string,
+  headers: Record<string, string>,
+  body: string,
+  ca?: string,
+): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const request = https.request(url, { method: 'POST', headers, ca }, (response) => {
+      let data = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk) => {
+        data += chunk;
+      });
+      response.on('end', () => {
+        resolve({ status: response.statusCode ?? 0, body: data });
+      });
+    });
+
+    request.on('error', reject);
+    request.setTimeout(20_000, () => {
+      request.destroy(new Error('GigaChat auth request timed out'));
+    });
+
+    request.write(body);
+    request.end();
+  });
+}
+
 async function requestAccessToken(): Promise<CachedToken> {
-  const response = await fetch(OAUTH_URL, {
-    method: 'POST',
-    headers: {
+  const response = await postForm(
+    OAUTH_URL,
+    {
       Authorization: `Basic ${getAuthKey()}`,
       RqUID: crypto.randomUUID(),
       'Content-Type': 'application/x-www-form-urlencoded',
       Accept: 'application/json',
     },
-    body: new URLSearchParams({
+    new URLSearchParams({
       scope: process.env.GIGACHAT_SCOPE ?? 'GIGACHAT_API_PERS',
     }).toString(),
-    signal: AbortSignal.timeout(20_000),
-  });
+    readCa(),
+  );
 
-  if (!response.ok) {
-    const details = await response.text().catch(() => '');
+  if (response.status < 200 || response.status >= 300) {
     throw new Error(
-      `GigaChat auth failed with status ${response.status}: ${details.slice(0, 200)}`,
+      `GigaChat auth failed with status ${response.status}: ${response.body.slice(0, 200)}`,
     );
   }
 
-  const payload = (await response.json()) as {
+  const payload = JSON.parse(response.body) as {
     access_token?: string;
     expires_at?: number;
   };
@@ -76,10 +121,12 @@ async function getAccessToken(): Promise<string> {
 
 export async function generateWithGigaChat(prompt: string): Promise<string> {
   const token = await getAccessToken();
+  const ca = readCa();
 
   const client = new OpenAI({
     apiKey: token,
     baseURL: API_BASE_URL,
+    httpAgent: ca ? new https.Agent({ ca }) : undefined,
   });
 
   const completion = await client.chat.completions.create({
