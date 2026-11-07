@@ -99,7 +99,7 @@ WITH CHECK (auth.uid()::text = "userId");
 ## Проверка работоспособности
 
 1. Зарегистрируйтесь на `/register` (если в Supabase включено подтверждение email — подтвердите адрес и войдите).
-2. Откройте `/billing` и активируйте подписку.
+2. Откройте `/billing` и оформите тариф (в MVP оплата имитируется).
 3. На `/dashboard` загрузите TXT (один отзыв на строку, до 1 МБ).
 4. Нажмите «Сгенерировать отчёт» — отчёт появится на странице и сохранится в `/history`.
 
@@ -108,7 +108,7 @@ WITH CHECK (auth.uid()::text = "userId");
 | Метод | Маршрут | Назначение |
 | --- | --- | --- |
 | POST | `/api/auth/register` | Upsert пользователя после регистрации |
-| POST | `/api/subscription/activate` | Активация подписки (MVP, без платежей) |
+| POST | `/api/subscription/purchase` | Оформление тарифа и начисление отчётов |
 | POST | `/api/reports/generate` | Загрузка TXT и генерация отчёта |
 | GET | `/api/reports/[id]` | Получение отчёта владельцем |
 
@@ -118,7 +118,7 @@ WITH CHECK (auth.uid()::text = "userId");
 | --- | --- |
 | 400 | Нет файла, не TXT, пустой файл, больше 1 МБ, нет отзывов |
 | 401 | Пользователь не авторизован |
-| 403 | Подписка не активна |
+| 403 | Нет доступных отчётов: тариф не оформлен или лимит исчерпан |
 | 404 | Запись пользователя не найдена в Prisma |
 | 409 | У пользователя уже идёт генерация отчёта |
 | 502 | Ошибка DeepSeek или невалидный ответ модели |
@@ -157,7 +157,7 @@ const lockRows = await tx.$queryRaw<LockRow[]>`
 app/
   (auth)/login, (auth)/register
   (dashboard)/layout.tsx, dashboard, history, billing
-  api/auth/register, api/subscription/activate
+  api/auth/register, api/subscription/purchase
   api/reports/generate, api/reports/[id]
   auth/callback/route.ts
   layout.tsx, page.tsx, globals.css
@@ -165,11 +165,12 @@ components/
   layout/{sidebar,header,sign-out-button}.tsx
   dashboard/{upload-form,report-card,report-markdown}.tsx
   history/history-list.tsx
-  billing/subscription-card.tsx
+  billing/plan-grid.tsx
   ui/{button,input,card,alert}.tsx
 lib/
   supabase/{client,server,middleware}.ts
   prisma.ts, auth.ts, deepseek.ts, format.ts, utils.ts
+  plans.ts, subscription.ts
   prompts/review-analysis.ts
 prisma/
   schema.prisma, migrations/
@@ -177,15 +178,41 @@ supabase/rls.sql
 middleware.ts
 ```
 
-## Деплой на Vercel
+## Тарифы
 
-1. Загрузите репозиторий в Vercel, добавьте переменные окружения из `.env.example`.
-2. `build` уже включает `prisma generate`.
-3. Примените миграции к боевой базе: `npm run db:migrate` с боевым `DATABASE_URL`/`DIRECT_URL`.
-4. Генерация помечена `maxDuration = 120` — на плане Hobby лимит ниже, учитывайте это для длинных отчётов.
+| Тариф | Цена | Отчётов |
+| --- | --- | --- |
+| Базовый | 99 ₽ | 10 |
+| Продвинутый | 239 ₽ | 150 |
+| Максимальный | 500 ₽ | 1000 |
+| Бессрочный | 1999 ₽ | без ограничений |
+
+Оформление идёт через `POST /api/subscription/purchase` с телом `{ "plan": "BASIC" }`. Сервер сам определяет цену и объём по каталогу `lib/plans.ts`, клиентские суммы не принимаются. Покупка начисляет отчёты к текущему балансу; «Бессрочный» выставляет `reportsLeft = null` и больше не ограничивает генерацию. Отчёт списывается только после успешного ответа модели и записи в базу — внутри той же транзакции, что и создание отчёта.
+
+Платёжный провайдер не подключён: в MVP оформление имитируется. Для реальных платежей нужен ЮKassa / Robokassa / Т-Банк и вебхук, который вызывает то же начисление.
+
+## Деплой
+
+**Netlify** (рабочий вариант, доступен из РФ):
+
+```bash
+npm i -g netlify-cli
+netlify login
+netlify link --project reviewradar
+netlify env:import .env
+netlify env:set NODE_EXTRA_CA_CERTS /var/task/certs/russian_trusted_root_ca_pem.crt
+netlify deploy --build --prod
+```
+
+- `netlify.toml` подключает `@netlify/plugin-nextjs` и включает `certs/**` в бандл функций.
+- Prisma собирается с `binaryTargets = ["native", "rhel-openssl-3.0.x"]` — без этого движок не находится на Linux.
+- Сертификат Минцифры читается кодом из `certs/` (`lib/gigachat.ts`), поэтому `NODE_EXTRA_CA_CERTS` нужен только как страховка.
+- Лимит синхронной функции на бесплатном плане — 10 секунд; генерация занимает 5–12 секунд, поэтому запрос может не успеть. Для стабильной работы нужен план Pro либо хостинг без таймаута (Railway, VPS).
+
+**Vercel**: сборка и деплой работают, но домены `*.vercel.app` блокируются в РФ — для российской аудитории не подходит.
 
 ## Ограничения MVP
 
-- Платежи не подключены: кнопка «Активировать подписку» меняет статус на `ACTIVE` без оплаты.
+- Платежи не подключены: оформление тарифа начисляет отчёты без списания денег.
 - Анализируются первые 10 000 символов файла.
-- Один отчёт — один запрос к DeepSeek без потоковой выдачи.
+- Один отчёт — один запрос к модели без потоковой выдачи.

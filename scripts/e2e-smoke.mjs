@@ -47,12 +47,20 @@ const register = await fetch(`${baseUrl}/api/auth/register`, {
 });
 console.log('register_api:', register.status);
 
-const activate = await fetch(`${baseUrl}/api/subscription/activate`, {
+const purchase = await fetch(`${baseUrl}/api/subscription/purchase`, {
   method: 'POST',
-  headers: { Cookie: cookieHeader },
+  headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
+  body: JSON.stringify({ plan: 'BASIC' }),
 });
-const activateJson = await activate.json().catch(() => null);
-console.log('activate:', activate.status, '|', activateJson?.subscriptionStatus ?? 'n/a');
+const purchaseJson = await purchase.json().catch(() => null);
+console.log(
+  'purchase:',
+  purchase.status,
+  '|',
+  purchaseJson?.plan ?? 'n/a',
+  '| reports_left:',
+  purchaseJson?.reportsLeft ?? 'n/a',
+);
 
 function buildFormData() {
   const formData = new FormData();
@@ -112,6 +120,11 @@ const dbUser = await prisma.user.findUnique({
   include: { _count: { select: { reports: true } } },
 });
 
-console.log('db_user:', dbUser ? `${dbUser.subscriptionStatus}, reports: ${dbUser._count.reports}` : 'missing');
+console.log(
+  'db_user:',
+  dbUser
+    ? `${dbUser.subscriptionStatus}, plan: ${dbUser.plan}, left: ${dbUser.reportsLeft}, used: ${dbUser.reportsUsed}, reports: ${dbUser._count.reports}`
+    : 'missing',
+);
 
 await prisma.$disconnect();

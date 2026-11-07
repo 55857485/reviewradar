@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { Header } from '@/components/layout/header';
 import { Sidebar } from '@/components/layout/sidebar';
 import { getSupabaseUser, ensureUserRecord } from '@/lib/auth';
+import { reportsLeftLabel } from '@/lib/subscription';
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabaseUser = await getSupabaseUser();
@@ -21,7 +22,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <Sidebar />
 
       <div className="flex min-h-screen flex-col">
-        <Header email={dbUser.email} subscriptionStatus={dbUser.subscriptionStatus} />
+        <Header email={dbUser.email} statusLabel={reportsLeftLabel(dbUser)} />
         <main className="flex-1 px-4 py-8 sm:px-6 lg:px-10">{children}</main>
       </div>
     </div>

@@ -5,6 +5,7 @@ import { UploadForm } from '@/components/dashboard/upload-form';
 import { Alert } from '@/components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { getCurrentDbUser } from '@/lib/auth';
+import { hasReportsAvailable } from '@/lib/subscription';
 import { prisma } from '@/lib/prisma';
 
 export default async function DashboardPage() {
@@ -24,7 +25,7 @@ export default async function DashboardPage() {
     },
   });
 
-  const subscriptionActive = user.subscriptionStatus === 'ACTIVE';
+  const canGenerate = hasReportsAvailable(user);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -36,13 +37,13 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      {!subscriptionActive ? (
+      {!canGenerate ? (
         <Alert variant="warning">
-          Подписка не активна. Перейдите в{' '}
+          Отчёты не подключены или закончились. Перейдите в{' '}
           <Link href="/billing" className="font-medium underline underline-offset-2">
-            Billing
+            «Тарифы»
           </Link>{' '}
-          и активируйте её, чтобы генерировать отчёты.
+          и оформите подходящий пакет.
         </Alert>
       ) : null}
 
@@ -54,7 +55,7 @@ export default async function DashboardPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <UploadForm subscriptionActive={subscriptionActive} />
+          <UploadForm canGenerate={canGenerate} />
         </CardContent>
       </Card>
 

@@ -18,7 +18,7 @@ type GenerateResponse = {
   error?: string;
 };
 
-export function UploadForm({ subscriptionActive }: { subscriptionActive: boolean }) {
+export function UploadForm({ canGenerate }: { canGenerate: boolean }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -64,7 +64,7 @@ export function UploadForm({ subscriptionActive }: { subscriptionActive: boolean
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!file || isLoading || !subscriptionActive) {
+    if (!file || isLoading || !canGenerate) {
       return;
     }
 
@@ -103,7 +103,7 @@ export function UploadForm({ subscriptionActive }: { subscriptionActive: boolean
     }
   }
 
-  const isDisabled = isLoading || !subscriptionActive;
+  const isDisabled = isLoading || !canGenerate;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -138,13 +138,13 @@ export function UploadForm({ subscriptionActive }: { subscriptionActive: boolean
         </Button>
       </div>
 
-      {!subscriptionActive ? (
+      {!canGenerate ? (
         <Alert variant="warning">
-          Подписка не активна.{' '}
+          Доступных отчётов нет.{' '}
           <Link href="/billing" className="font-medium underline underline-offset-2">
-            Активируйте подписку
+            Оформите тариф
           </Link>
-          , чтобы генерировать отчёты.
+          , чтобы продолжить.
         </Alert>
       ) : null}
 

@@ -16,11 +16,22 @@ enum SubscriptionStatus {
   PAST_DUE
 }
 
+enum SubscriptionPlan {
+  BASIC
+  ADVANCED
+  MAX
+  LIFETIME
+}
+
 model User {
   id                 String             @id
   email              String             @unique
   name               String?
   subscriptionStatus SubscriptionStatus @default(INACTIVE)
+  plan               SubscriptionPlan?
+  reportsLeft        Int?
+  reportsUsed        Int                @default(0)
+  planPurchasedAt    DateTime?
   reports            Report[]
   createdAt          DateTime           @default(now())
 }

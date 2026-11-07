@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { REVIEW_ANALYSIS_PROMPT } from '@/lib/prompts/review-analysis';
 import { generateReviewAnalysis } from '@/lib/deepseek';
 import { isLlmConfigured } from '@/lib/llm-config';
+import { hasReportsAvailable } from '@/lib/subscription';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -36,8 +37,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Пользователь не найден' }, { status: 404 });
     }
 
-    if (dbUser.subscriptionStatus !== 'ACTIVE') {
-      return NextResponse.json({ error: 'Подписка не активна' }, { status: 403 });
+    if (!hasReportsAvailable(dbUser)) {
+      return NextResponse.json(
+        { error: 'Нет доступных отчётов. Оформите тариф в разделе «Подписка»' },
+        { status: 403 },
+      );
     }
 
     const formData = await request.formData().catch(() => null);
@@ -127,6 +131,21 @@ export async function POST(request: Request) {
             createdAt: true,
           },
         });
+
+        if (dbUser.plan === 'LIFETIME') {
+          await tx.user.update({
+            where: { id: user.id },
+            data: { reportsUsed: { increment: 1 } },
+          });
+        } else {
+          await tx.user.update({
+            where: { id: user.id },
+            data: {
+              reportsLeft: { decrement: 1 },
+              reportsUsed: { increment: 1 },
+            },
+          });
+        }
 
         return { status: 'ok', report };
       },
